@@ -19,7 +19,7 @@ divergence_period_lengths = [10, 25]		#first value = minimum length, second valu
 divergence_look_back_period = 50
 stops = False	# if True it will ask to press a key to continue displaying one result; if False it will continue to display all results.
 max_divergences = 5
-list_of_email_addresses = ['ovidiu162000@yahoo.com']	#'joewaltman@gmail.com', 'shaltcoin-screener@googlegroups.com', 
+list_of_email_addresses = ['joewaltman@gmail.com', 'shaltcoin-screener@googlegroups.com', 'ovidiu162000@yahoo.com']	#
 
 total_nr_of_coins = 0
 
@@ -399,7 +399,11 @@ def calculate_indicators(coin):
 								print(coin, ' - BULL RLZ!')
 								email_info.write(str(coin) + ' https://bittrex.com/Market/Index?MarketName=BTC-' + str(coin) + '\n')
 							print("fib_data:", fib_data)
-							email_info.write(str(fib_data[1]) + ' period - ' + 'Bullish - ' + ('%.2f' %fib_data[6]) + '\n')
+							
+							if current_coin not in prev_signaled_coins:
+								email_info.write(str(fib_data[1]) + ' period - ' + 'Bullish - ' + ('%.2f' %(1-fib_data[6])) + ' - NEW SIGNAL!' + '\n')
+							else:
+								email_info.write(str(fib_data[1]) + ' period - ' + 'Bullish - ' + ('%.2f' %(1-fib_data[6])) + '\n')
 							email_info.write('Low on ' + (str(fib_data[2]))[:10] + ' at ' + str(fib_data[3]) + '\n')
 							email_info.write('High on '  + (str(fib_data[4]))[:10] + ' at ' + str(fib_data[5]) + '\n')
 							
@@ -427,7 +431,11 @@ def calculate_indicators(coin):
 								print(coin, ' - BEAR RLZ!')
 								email_info.write(str(coin) + ' https://bittrex.com/Market/Index?MarketName=BTC-' + str(coin) + '\n')
 							print("fib_data:", fib_data)
-							email_info.write(str(fib_data[1]) + ' period - ' + 'Bullish - ' + ('%.2f' %fib_data[6]) + '\n')
+							
+							if current_coin not in prev_signaled_coins:
+								email_info.write(str(fib_data[1]) + ' period - ' + 'Bearish - ' + ('%.2f' %fib_data[6]) + ' - NEW SIGNAL!' + '\n')
+							else:
+								email_info.write(str(fib_data[1]) + ' period - ' + 'Bearish - ' + ('%.2f' %fib_data[6]) + '\n')
 							email_info.write('Low on ' + (str(fib_data[2]))[:10] + ' at ' + str(fib_data[3]) + '\n')
 							email_info.write('High on '  + (str(fib_data[4]))[:10] + ' at ' + str(fib_data[5]) + '\n')
 							
@@ -467,7 +475,7 @@ def calculate_indicators(coin):
 		#log_information(coin, OHLC)
 
 def main():
-	global email_info, signaled_coins
+	global email_info, signaled_coins, prev_signaled_coins
 	btc_coins = get_btc_coins()
 	#btc_coins = ['AMP', 'AUR', 'ETH', 'LTC', 'NEO', 'OMG', 'TX', 'SYS', 'SNRG']	#LRC
 	
