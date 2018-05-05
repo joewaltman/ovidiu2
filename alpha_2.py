@@ -2,6 +2,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 import pickle
+import sys
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -47,7 +48,7 @@ def SendEmail(subject, body):
 		except:
 			print("Something went wrong with email")
 
-def get_btc_coins():
+def get_btc_coins_old():
 	url = "https://bittrex.com/api/v1.1/public/getmarketsummaries"
 	response = bittrex_session.get(url)
 	data = json.loads(response.text)
@@ -61,6 +62,53 @@ def get_btc_coins():
 			btcmarkets.append(M[4:])
 	return btcmarkets
 
+def get_btc_coins():
+	btcmarkets = []
+	url = 'https://bittrex.com/api/v1.1/public/getmarkets'
+		
+	count = 0
+	while True:
+		try:
+			response = bittrex_session.get(url)
+		except requests.exceptions.RequestException as e:
+			count = count + 1
+			print("Bittrex - Error while request prices ", str(e))
+			if count == 10:
+				print("Bittrex - Tried to request prices 10 times and failed. Exiting script!")
+				error_message = str(e)
+				now = datetime.today() - timedelta(hours=7)
+				now = now.strftime("%d-%m-%Y  %H:%M")
+				subject = "Script error " + str(now)
+				SendEmail(subject, error_message)
+				sys.exit()
+			continue
+		else:
+			break
+	
+	try:
+		data = json.loads(response.text)
+	except Exception as e:
+		error_message = str(e)
+		now = datetime.today() - timedelta(hours=7)
+		now = now.strftime("%d-%m-%Y  %H:%M")
+		subject = "Script error " + str(now)
+		SendEmail(subject, error_message)
+		sys.exit()
+		
+	if data['success']:
+		for D in data['result']:
+			if D['BaseCurrency'] == 'BTC' and D['IsActive']:
+				btcmarkets.append(D['MarketCurrency'])
+	else:
+		error_message = data['message']
+		now = datetime.today() - timedelta(hours=7)
+		now = now.strftime("%d-%m-%Y  %H:%M")
+		subject = "Script error " + str(now)
+		SendEmail(subject, error_message)
+		sys.exit()
+	btcmarkets.sort()
+	return btcmarkets	
+	
 def get_historical_prices(coin):
 	success = False
 	url = "https://bittrex.com/Api/v2.0/pub/market/GetTicks?marketName=BTC-"+coin+"&tickInterval=day"
@@ -359,7 +407,23 @@ def get_all_slopes(OHLC, momentum):
 				k = k + 1
 				
 		return bear_divergences
-		
+	
+def get_prev_day_vol(coin, OHLC):
+	prev_day_vol = OHLC[-1][3] * OHLC[-2][5]
+	return prev_day_vol
+	input("enter...")
+
+def get_diff_from_ATH(coin, OHLC):
+	max_price = 0
+	for D in OHLC:
+		if D[2] > max_price:
+			max_price = D[2]
+			max_price_date = D[0]
+	max_price_date = max_price_date[:10]
+	current_price = OHLC[-1][4]
+	diff_from_ATH = max_price/current_price
+	return diff_from_ATH, max_price_date
+	
 def calculate_indicators(coin):
 	global total_nr_of_coins
 	
@@ -398,6 +462,10 @@ def calculate_indicators(coin):
 								total_nr_of_coins += 1
 								print(coin, ' - BULL RLZ!')
 								email_info.write(str(coin) + ' https://bittrex.com/Market/Index?MarketName=BTC-' + str(coin) + '\n')
+								prev_day_vol = get_prev_day_vol(coin, OHLC)
+								diff_from_ATH, max_price_date = get_diff_from_ATH(coin, OHLC)
+								email_info.write("Previous day's volume in BTC - " + ('%.2f' %prev_day_vol) + '\n')
+								email_info.write("Current price multiples to reach ATH - " + ('%.2f' %diff_from_ATH) + " | ATH date: " + max_price_date + '\n')
 							print("fib_data:", fib_data)
 							
 							if current_coin not in prev_signaled_coins:
@@ -430,6 +498,10 @@ def calculate_indicators(coin):
 								total_nr_of_coins += 1
 								print(coin, ' - BEAR RLZ!')
 								email_info.write(str(coin) + ' https://bittrex.com/Market/Index?MarketName=BTC-' + str(coin) + '\n')
+								prev_day_vol = get_prev_day_vol(coin, OHLC)
+								diff_from_ATH, max_price_date = get_diff_from_ATH(coin, OHLC)
+								email_info.write("Previous day's volume in BTC - " + ('%.2f' %prev_day_vol) + '\n')
+								email_info.write("Current price multiples to reach ATH - " + ('%.2f' %diff_from_ATH) + " | ATH date: " + max_price_date + '\n')
 							print("fib_data:", fib_data)
 							
 							if current_coin not in prev_signaled_coins:
@@ -477,7 +549,7 @@ def calculate_indicators(coin):
 def main():
 	global email_info, signaled_coins, prev_signaled_coins
 	btc_coins = get_btc_coins()
-	#btc_coins = ['AMP', 'AUR', 'ETH', 'LTC', 'NEO', 'OMG', 'TX', 'SYS', 'SNRG']	#LRC
+	#btc_coins = ['BAT', 'BSD']	#LRC, 'AUR', 'ETH', 'LTC', 'NEO', 'OMG', 'TX', 'SYS', 'SNRG'
 	
 	with open('signaled_coins.pkl', 'rb') as input:
 		prev_signaled_coins = pickle.load(input)
