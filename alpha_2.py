@@ -110,14 +110,14 @@ def get_btc_coins():
 	return btcmarkets	
 	
 def get_historical_prices(coin):
-	success = False
 	url = "https://bittrex.com/Api/v2.0/pub/market/GetTicks?marketName=BTC-"+coin+"&tickInterval=day"
-	while not success:
+	while True:
 		response = bittrex_session.get(url)
 		data = json.loads(response.text)
-		success = data['success']
-		if data['success'] == False:
-			print(coin, "========================", data)
+		if (data != None) and (data['success'] == True) and (data['result'] != None):
+			break
+		else:
+			time.sleep(1)
 	return data
 	
 def max_and_min(list):
@@ -586,8 +586,8 @@ def main():
 	
 	email_info = open("email_info.txt","r")
 	now = datetime.today() - timedelta(hours=7)
-	now = now.strftime("%d-%m-%Y  %H:%M")
-	subject = "Coin info " + str(now)
+	now = now.strftime("%d-%m-%Y")
+	subject = "Shaltcoin Screener - RLZ + Willly + MACD div coins for " + str(now)
 	body = email_info.read()
 	SendEmail(subject, body)
 	print(signaled_coins)
