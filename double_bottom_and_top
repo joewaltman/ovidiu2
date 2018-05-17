@@ -1,0 +1,153 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun May 13 18:37:35 2018
+@author: Nicolas
+"""
+
+import requests
+import pandas as pd 
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.dates import date2num
+import datetime
+
+# The function get_tokens() retrieve the whole list of tokens from Bittrex
+# The function ohlcv() get all the series of the tokens that were passed in the function
+# Find_double_top and find_double_bottom look in those series if the double top or double bottom pattern
+# are in the series and output Point A,B,C,D and E, as weel as the date in which the pattern trigger and a score rating
+
+def get_tokens():
+
+    response = requests.get('https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries')
+
+    data = response.json()
+    data = data["result"]
+    tokens = []
+    for item in data:
+        tokens.append(item["Market"]["MarketCurrency"])
+        
+    return tokens
+    
+tokens = get_tokens()[140:160] #Take only 20 tokens that are between 140 to 160   
+
+def ohlcv(tokens):
+    prices = []
+    for token in tokens:
+       
+        response = requests.get('https://bittrex.com/Api/v2.0/pub/market/GetTicks?marketName=BTC-{}&tickInterval=day'.format(token))
+        data = response.json()
+        data = data["result"][-50:] # Only take the last 50 days of the series 
+        for item in data:
+            close = item["C"]
+            date = item["T"]
+            one_item_list = {"Token":token, "Date": date,"Close_Price": close}
+            prices.append(one_item_list)
+    
+    tokens = pd.DataFrame(prices, columns=["Close_Price","Date","Token"])
+    tokens = tokens.set_index(['Token','Date']) 
+    tokens = tokens.unstack(0)
+    tokens.columns = tokens.columns.droplevel(0)
+    tokens.index = pd.to_datetime(tokens.index)
+    
+    return tokens 
+    
+
+data = ohlcv(tokens)
+            
+def find_double_top(prices):
+    max_value_index = len(prices.loc[:prices.idxmax()]) - 1 
+    #diff = prices.diff()
+
+    point_B = prices[max_value_index]
+    data = prices[(max_value_index +1):]
+    second_top_period = data.idxmax()
+    periods_D_from_B = len(data.loc[:second_top_period]) -1
+    point_D_length = len(prices.loc[:second_top_period])
+    point_D = data[second_top_period]
+    if data[second_top_period] > (prices[max_value_index] * 0.95):
+        print("This series has two highs with a distance of %s periods" % len(data[:(periods_D_from_B)+1]))
+        prices_from_B_D = data[:periods_D_from_B]
+        point_C_period = prices_from_B_D.idxmin()
+        point_C_length = len(prices[:point_C_period])
+        point_C = data[point_C_period]  # point_C is the pull back between double top. Should have a relative strength when go down
+        print(point_C) 
+        print("distance between point B and point C is %s" % len(prices[max_value_index:point_C_length]))
+        print("distance between point C and point D is %s" % len(prices[point_C_length:point_D_length]))
+        for i in range(len(prices[:point_C_period]),0,-1):
+            if prices[i] < point_C: # With point_C, find point A
+                point_A = prices[i]
+                point_A_period = prices.index[i]
+                print("point A was found with a value of %s on date %s" % (point_A, point_A_period))
+                break
+        for i in range(1,len(data[second_top_period:data.index[-1]])):
+            if (data[i] < (point_C)):
+                point_E = data[i]
+                point_E_period = data.index[i]
+                date = data.index[i]
+                print("doble top pattern were achieved at point %s on date %s" % (point_E,date))
+                print("point B was on day %s" % max_value_index)
+                print("point C was on day %s" % point_C_length)
+                print("point D was on day %s" % point_D_length)
+                
+                score_of_levels_B_and_D = 0.6 * (point_B/point_D)**10 # as more near these two point is better. Point B always is higher than point D
+                #score_of_levels_A_and_E = ((min(point_A,point_E) / max(point_A,point_E))**10) * 0.2 # this comparison penalize the difference between the levels of point_A and point_E  
+                periods_from_A_to_C = len(prices[point_A_period:point_C_period])
+                periods_from_C_to_E = len(prices[point_C_period:point_E_period])
+                simmetry = min(periods_from_A_to_C,periods_from_C_to_E) / max(periods_from_A_to_C, periods_from_C_to_E) * 0.4
+                Total_Score = score_of_levels_B_and_D +  simmetry
+                
+                return point_A, point_B, point_C, point_D, point_E,date, Total_Score
+    else:
+        print("Not double tops found in this price series")
+     
+    return None            
+    
+def find_double_bottom(prices):
+    min_value_index = len(prices.loc[:prices.idxmin()]) - 1 
+
+
+    point_B = prices[min_value_index]
+    data = prices[(min_value_index +1):]
+    second_bottom_period = data.idxmin()
+    periods_D_from_B = len(data.loc[:second_bottom_period]) -1
+    point_D_length = len(prices.loc[:second_bottom_period])
+    point_D = data[second_bottom_period]
+    if data[second_bottom_period] > (prices[min_value_index]):
+        print("This series has two lows with a distance of %s periods" % len(data[:(periods_D_from_B)+1]))        
+        prices_from_B_D = data[:periods_D_from_B]
+        point_C_period = prices_from_B_D.idxmax()
+        point_C_length = len(prices[:point_C_period])
+        point_C = data[point_C_period]  # point_C is the pull back between double top. Should have a relative strength when go down
+        print("point C is %s " % point_C)
+        print("distance between point B and point C is %s" % len(prices[min_value_index:point_C_length]))
+        print("distance between point C and point D is %s" % len(prices[point_C_length:point_D_length]))
+        for i in range(len(prices[:point_C_period]),0,-1):
+            if prices[i] > point_C: # With point_C, find point A
+                point_A = prices[i]
+                point_A_period = prices.index[i]
+                print("point A was found with a value of %s on date %s" % (point_A, point_A_period))
+                break
+        for i in range(1 , len(data[second_bottom_period:data.index[-1]])):
+            if (data[i] > (point_C)):
+                point_E = data[i]
+                point_E_period = data.index[i]
+                date = data.index[i]
+                print(i)
+                print("doble bottom pattern were achieved at point %s on date %s" % (point_E,date))
+                print("point B was on day %s" % min_value_index)
+                print("point C was on day %s" % point_C_length)
+                print("point D was on day %s" % point_D_length)
+                score_of_levels_B_and_D = 0.6 * (point_B/point_D)**10 # as more near these two point is better. Point B always is lower than point D
+                #score_of_levels_A_and_E = ((min(point_A,point_E) / max(point_A,point_E))**10) * 0.2 # this comparison penalize the difference between the levels of point_A and point_E  
+                periods_from_A_to_C = len(prices[point_A_period:point_C_period])
+                periods_from_C_to_E = len(prices[point_C_period:point_E_period])
+                simmetry = min(periods_from_A_to_C,periods_from_C_to_E) / max(periods_from_A_to_C, periods_from_C_to_E) * 0.4
+                
+                Total_Score = score_of_levels_B_and_D  + simmetry
+                
+                return point_A, point_B, point_C, point_D, point_E,date, Total_Score
+    
+    else:
+        print("Not double bottom found in this price series")
+     
+    return None            
