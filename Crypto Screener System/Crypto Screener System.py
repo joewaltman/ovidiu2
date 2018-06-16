@@ -26,6 +26,11 @@ w_lookback_periods = [5, 10, 15]
 
 divergence_lookback_periods = [5, 25]
 
+rlz_periods = [50, 75, 100, 125, 150, 175, 200]
+
+poz_slope = 0.5
+neg_slope = -0.5
+
 def get_btc_coins():
 	btcmarkets = []
 	url = 'https://bittrex.com/api/v1.1/public/getmarkets'
@@ -251,6 +256,24 @@ def W_finder(OHLCV):
 			
 			if point_C_value < point_D_value:
 				continue
+				
+			if (point_B_value == point_D_value) or (point_B_value == point_C_value) or (point_C_value == point_D_value):
+				continue
+				
+			if len(temp_df) - point_D_location < 2:
+				continue
+			
+			df_for_point_E = temp_df[point_D_location+1:len(temp_df)]
+			point_E_dates = df_for_point_E['close'][df_for_point_E['close'] > point_C_value].index
+			if len(point_E_dates) == 0:
+				continue
+			elif len(point_E_dates) > 0:
+				point_E_date = point_E_dates[0]
+			point_E_value = df_for_point_E.get_value(point_E_date, 'close')
+			point_E_location = temp_df.index.get_loc(point_E_date)
+			
+			if point_E_value < point_C_value:
+				continue
 			
 			score_of_levels_B_and_D = 0.6 * (point_B_value/point_D_value)**10 # as more near these two point is better. Point B always is lower than point D
 			periods_from_B_to_C = point_C_location - point_B_location
@@ -265,6 +288,8 @@ def W_finder(OHLCV):
 						'point_C_value' : point_C_value, 
 						'point_D_date' : point_D_date, 
 						'point_D_value' : point_D_value,
+						'point_E_date' : point_E_date, 
+						'point_E_value' : point_E_value,
 						'Total_Score' : Total_Score})
 		
 		if len(Ws) == 0:
@@ -280,6 +305,9 @@ def W_finder(OHLCV):
 			
 			OHLCV.set_value(OHLCV.index[i], 'w_price_D_date', Ws[0]['point_D_date'])
 			OHLCV.set_value(OHLCV.index[i], 'w_price_D_value', Ws[0]['point_D_value'])
+			
+			OHLCV.set_value(OHLCV.index[i], 'w_price_E_date', Ws[0]['point_E_date'])
+			OHLCV.set_value(OHLCV.index[i], 'w_price_E_value', Ws[0]['point_E_value'])
 		elif len(Ws) > 1:
 			sorted_Ws = sorted(Ws, key=itemgetter('Total_Score'), reverse=True)
 			OHLCV.set_value(OHLCV.index[i], 'w_price_score', Ws[0]['Total_Score'])
@@ -292,6 +320,9 @@ def W_finder(OHLCV):
 			
 			OHLCV.set_value(OHLCV.index[i], 'w_price_D_date', Ws[0]['point_D_date'])
 			OHLCV.set_value(OHLCV.index[i], 'w_price_D_value', Ws[0]['point_D_value'])
+			
+			OHLCV.set_value(OHLCV.index[i], 'w_price_E_date', Ws[0]['point_E_date'])
+			OHLCV.set_value(OHLCV.index[i], 'w_price_E_value', Ws[0]['point_E_value'])
 			
 	return OHLCV
 
@@ -308,9 +339,9 @@ def find_divergence(OHLCV):
 		maximum = max(list)
 		minimum = min(list)
 		return maximum, minimum	
+	
 	#start_period finds the location of the first macdhist value
 	start_period = OHLCV.index.get_loc(OHLCV['macdhist'].first_valid_index())
-	
 
 	for i in range(start_period+divergence_lookback_periods[1], len(OHLCV)):
 		bull_divergences = []
@@ -325,13 +356,6 @@ def find_divergence(OHLCV):
 				price_data.append(OHLCV.ix[j]['close'])
 				macd_data.append(OHLCV.ix[j]['macdhist'])
 				j_data.append(j)
-				
-			# print('i = %s | k = %s | j = %s' %(i, k, j))
-			# print('day_data: %s | ' %(len(day_data)), day_data)
-			# print('price_data: %s | ' %(len(price_data)), price_data)
-			# print('macd_data:: %s | ' %(len(macd_data)), macd_data)
-			# print('j_data: %s | ' %(len(j_data)), j_data)
-			# input('enter...')
 			
 			price_data = normalize(price_data)
 			macd_data = normalize(macd_data)
@@ -339,22 +363,17 @@ def find_divergence(OHLCV):
 			price_slope, price_intercept, price_rvalue, price_pvalue, price_stderr = linregress(j_data, price_data)
 			macd_slope, macd_intercept, macd_rvalue, macd_pvalue, macd_stderr = linregress(j_data, macd_data)
 			
-			if price_slope < 0 and macd_slope > 0:
+			new_price_slope = price_slope * len(j_data)
+			new_macd_slope = macd_slope * len(j_data)
+
+			if new_price_slope < neg_slope and new_macd_slope > poz_slope:				
 				bull_divergences.append({'Divergence Start' : day_data[0], 
 										'Divergence End' : day_data[-1], 
 										'Price Slope' : price_slope, 
 										'MACD Slope' : macd_slope})
 				break
-		
-				# print({'Divergence Start' : day_data[0], 
-						# 'Divergence End' : day_data[-1], 
-						# 'Price Slope' : price_slope, 
-						# 'MACD Slope' : macd_slope})
-				# print('i = %s | k = %s | j = %s' %(i, k, j))
-				# input('enter...')
+
 		if len(bull_divergences) > 0:
-			# print('i = %s | k = %s | j = %s' %(i, k, j))
-			# print('divergences:', len(bull_divergences))
 			OHLCV.set_value(OHLCV.index[i], 'divergence', len(bull_divergences))
 			
 	return OHLCV
@@ -377,110 +396,47 @@ def divergence_condition(df, value):
 			return True
 	return False
 
-btc_coins = get_btc_coins()
-to_remove = ['2GIVE', 'ABY', 'ADA', 'ADT', 'ADX', 'AEON', 'AMP', 'ANT', 'ARDR', 'ARK', 'AUR', 'BAT', 'BAY', 'BCC', 'LGD']
-for R in to_remove:
-	btc_coins.remove(R)
+def main():
+	btc_coins = get_btc_coins()
+	to_remove = ['LGD']
+	for R in to_remove:
+		btc_coins.remove(R)
 
-#btc_coins = ['TRX', 'LTC', 'DOGE', 'NEO', 'ADA']
-#btc_coins = ['ADA', 'NEO']
-signals = []
+	#btc_coins = ['ADA', 'NEO']
+	signals = []
 
-for C in btc_coins:
-	file = open('all_results.txt','a')
-	
-	
-	OHLCV = create_OHLC(C)
-	if len(OHLCV) < 220:
-		continue
+	for C in btc_coins:
+		OHLCV = create_OHLC(C)
+		if len(OHLCV) < 220:
+			continue
+			
+		print(C, len(OHLCV), 'days')
 		
-	print(C, len(OHLCV), 'days')
-	
-	start_time = time.time()
-	OHLCV = MACD(OHLCV)
-	print("Creating MACD data--- %s seconds ---" % (time.time() - start_time))
-	
-	start_time = time.time()
-	OHLCV = WILLR(OHLCV)
-	print("Creating Willy data--- %s seconds ---" % (time.time() - start_time))
-	
-	start_time = time.time()
-	OHLCV = RLZ(OHLCV, 50)
-	OHLCV = RLZ(OHLCV, 100)
-	OHLCV = RLZ(OHLCV, 200)
-	print("Creating 3 RLZ data--- %s seconds ---" % (time.time() - start_time))
-	
-	start_time = time.time()
-	OHLCV = W_finder(OHLCV)
-	print("Creating W data--- %s seconds ---" % (time.time() - start_time))
-	
-	start_time = time.time()
-	OHLCV  = find_divergence(OHLCV)
-	print("Creating Divergence data--- %s seconds ---" % (time.time() - start_time))
-	
-	# current_day = OHLCV.ix[81].name
-	# print('current_day:', current_day)
-	# #print(OHLCV.loc[:current_day]['willy'].tail(5) < -62)
-	# willy_df = OHLCV.loc[:current_day]['willy'].tail(5)
-	# cond_willy = willy_condition(willy_df, -80)
-	# print('cond_willy:', cond_willy)
-	# print(OHLCV.ix[85]['rlz_50_type'])
-	
-	start_time = time.time()
-	
-	coin_signals = 0
-	signal_dates = []
-	
-	start_period = 50
-	for i in range(start_period, len(OHLCV)):
-		current_day = OHLCV.ix[i].name
-		willy_df = OHLCV.loc[:current_day]['willy'].tail(5)
-		w_df = OHLCV.loc[:current_day]['w_price_score'].tail(5)
-		divergence_df = OHLCV.loc[:current_day]['divergence'].tail(25)
+		start_time = time.time()
+		OHLCV = MACD(OHLCV)
+		print("Creating MACD data--- %s seconds ---" % (time.time() - start_time))
 		
-		cond1 = (OHLCV.ix[i]['rlz_50_type'] == 'bull') and (OHLCV.ix[i]['rlz_50_fib'] > 0.618)
-		cond2 = (OHLCV.ix[i]['rlz_100_type'] == 'bull') and (OHLCV.ix[i]['rlz_100_fib'] > 0.618)
-		cond3 = (OHLCV.ix[i]['rlz_200_type'] == 'bull') and (OHLCV.ix[i]['rlz_200_fib'] > 0.618)
-		cond4 = willy_condition(willy_df, -80)
-		cond5 = w_condition(w_df, 0.5)
-		cond6 = divergence_condition(divergence_df, 0)
+		start_time = time.time()
+		OHLCV = WILLR(OHLCV)
+		print("Creating Willy data--- %s seconds ---" % (time.time() - start_time))
 		
-		if (cond1 or cond2 or cond3) and cond4 and cond5 and cond6:
-			if coin_signals == 0:
-				signal_dates.append(current_day)
-				coin_signals += 1
-			elif coin_signals > 0:
-				if current_day - timedelta(days=1) == signal_dates[-1]:
-					del signal_dates[-1]
-					signal_dates.append(current_day)
-					#coin_signals += 1
-				else:
-					signal_dates.append(current_day)
-					coin_signals += 1
-	print("Comparing conditions--- %s seconds ---" % (time.time() - start_time))
-	
-	file.write(str(C))
-	file.write('\n')
-	file.write('Nr of signals: ' + str(coin_signals))
-	file.write('\n')
-	file.write('Signal dates: ' + str(signal_dates))
-	file.write('\n')
-	file.write('\n')
-	file.close()
-	
-	signals.append({'Coin' : C, 'Nr of signals' : coin_signals, 'Signal dates' : signal_dates})
-	write_to_excel(C, OHLCV)
-	print("Done for %s !" %C)
-	print('\n')
-#print(signals)
-total_signals = 0
-for S in signals:
-	total_signals = total_signals + S['Nr of signals']
-	
-with open('results.txt', 'w') as f:
-	f.write('Total signals: ' + str(total_signals))
-	f.write('\n')
-	f.write(str(signals))
-	
-	
-	#print(OHLCV.tail(n=15))
+		start_time = time.time()
+		for p in rlz_periods:
+			OHLCV = RLZ(OHLCV, p)
+		print("Creating 3 RLZ data--- %s seconds ---" % (time.time() - start_time))
+		
+		start_time = time.time()
+		OHLCV = W_finder(OHLCV)
+		print("Creating W data--- %s seconds ---" % (time.time() - start_time))
+		
+		start_time = time.time()
+		OHLCV  = find_divergence(OHLCV)
+		print("Creating Divergence data--- %s seconds ---" % (time.time() - start_time))
+		
+		print("Writing to excel")
+		write_to_excel(C, OHLCV)
+		print("Done for %s !" %C)
+		print('\n')
+		
+if __name__ == "__main__":
+	main()
